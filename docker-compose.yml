@@ -1,6 +1,6 @@
 # Two gateway replicas share one Redis, so they enforce one global limit.
-# Two gateway replicas share one Redis, so they enforce one global limit.
 # Send requests alternately to :8081 and :8082 and watch 200 turn into 429 after the burst.
+services:
   redis:
     image: redis:7-alpine
 
