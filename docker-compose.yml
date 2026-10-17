@@ -1,0 +1,20 @@
+# Two gateway replicas share one Redis, so they enforce one global limit.
+# Two gateway replicas share one Redis, so they enforce one global limit.
+# Send requests alternately to :8081 and :8082 and watch 200 turn into 429 after the burst.
+  redis:
+    image: redis:7-alpine
+
+  upstream:
+    image: traefik/whoami
+
+  gateway-a:
+    build: .
+    command: ["-listen=:8080", "-upstream=http://upstream:80", "-redis=redis:6379", "-burst=50", "-rate=10"]
+    ports: ["8081:8080"]
+    depends_on: [redis, upstream]
+
+  gateway-b:
+    build: .
+    command: ["-listen=:8080", "-upstream=http://upstream:80", "-redis=redis:6379", "-burst=50", "-rate=10"]
+    ports: ["8082:8080"]
+    depends_on: [redis, upstream]
