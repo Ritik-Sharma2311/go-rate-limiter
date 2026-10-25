@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: rate-limiter
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: UPSTREAM_URL
+        value: demo # built-in JSON reply, so the demo needs no second service
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: rate-limiter-redis
+          property: connectionString
+  - type: keyvalue
+    name: rate-limiter-redis
+    plan: free
+    ipAllowList: [] # internal connections only

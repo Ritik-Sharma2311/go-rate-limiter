@@ -64,3 +64,15 @@ CI runs the suite twice over: against miniredis, and against a real Redis servic
 ## Limits
 
 One Redis is a single point of coordination; Redis Cluster would need keys hashed to one slot per client (they are, since each client is one key). The bucket is token based, so it allows bursts by design; for strictly smooth output use a leaky bucket instead.
+
+## Deploy (free tier)
+
+`render.yaml` deploys the gateway and a Redis (Key Value) instance on Render. `UPSTREAM_URL=demo` makes the gateway answer with a small JSON body itself, so no second service is needed. Settings can also come from `PORT`, `REDIS_URL` and `UPSTREAM_URL`.
+
+`/healthz` bypasses the limiter and Redis, so an uptime monitor (for example UptimeRobot, 5 minute interval) can keep the service awake cheaply. Free hosts sleep when idle, so the first request after a quiet period can take 30-50 seconds.
+
+Behind a hosted proxy every client shares the proxy's IP, so send an `X-API-Key` header to get your own bucket (the limiter deliberately ignores `X-Forwarded-For`, which clients can forge).
+
+## Postman
+
+Import `postman/rate-limiter.postman_collection.json`, set `base_url`, then run **Burst request** in the Collection Runner (60+ iterations, no delay) to watch 200 turn into 429. Change `api_key` for a fresh bucket.

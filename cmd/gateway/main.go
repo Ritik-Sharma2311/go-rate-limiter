@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -22,31 +23,52 @@ import (
 )
 
 func main() {
-	listen := flag.String("listen", ":8080", "listen address")
-	upstream := flag.String("upstream", "http://localhost:9000", "upstream base URL")
-	redisAddr := flag.String("redis", "localhost:6379", "redis address")
+	listen := flag.String("listen", listenDefault(), "listen address (defaults to :$PORT when PORT is set)")
+	upstream := flag.String("upstream", env("UPSTREAM_URL", "http://localhost:9000"), "upstream base URL; \"demo\" serves a built-in JSON reply")
+	redisAddr := flag.String("redis", env("REDIS_ADDR", "localhost:6379"), "redis address, or a redis:// URL (also read from REDIS_URL)")
 	burst := flag.Int("burst", 50, "bucket capacity (burst size)")
 	rate := flag.Float64("rate", 10, "tokens refilled per second")
 	flag.Parse()
 
-	target, err := url.Parse(*upstream)
-	if err != nil {
-		log.Fatalf("bad -upstream: %v", err)
+	opts := &redis.Options{Addr: *redisAddr}
+	if u := os.Getenv("REDIS_URL"); u != "" {
+		*redisAddr = u
 	}
-
-	rdb := redis.NewClient(&redis.Options{
-		Addr:        *redisAddr,
-		DialTimeout: 200 * time.Millisecond,
-		ReadTimeout: 200 * time.Millisecond,
-		MaxRetries:  -1, // a slow Redis must not stall requests; fail open instead
-	})
+	if strings.HasPrefix(*redisAddr, "redis://") || strings.HasPrefix(*redisAddr, "rediss://") {
+		parsed, err := redis.ParseURL(*redisAddr)
+		if err != nil {
+			log.Fatalf("bad redis URL: %v", err)
+		}
+		opts = parsed
+	}
+	opts.DialTimeout = 200 * time.Millisecond
+	opts.ReadTimeout = 200 * time.Millisecond
+	opts.MaxRetries = -1 // a slow Redis must not stall requests; fail open instead
+	rdb := redis.NewClient(opts)
 	lim, err := limiter.NewRedis(rdb, limiter.Config{Capacity: *burst, RefillPerSec: *rate})
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	handler := middleware.RateLimit(lim, middleware.ClientKey, proxy)
+	var next http.Handler
+	if *upstream == "demo" {
+		next = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}` + "\n"))
+		})
+	} else {
+		target, err := url.Parse(*upstream)
+		if err != nil {
+			log.Fatalf("bad -upstream: %v", err)
+		}
+		next = httputil.NewSingleHostReverseProxy(target)
+	}
+	limited := middleware.RateLimit(lim, middleware.ClientKey, next)
+	// The health check bypasses the limiter and Redis, so uptime pings are cheap.
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.Handle("/", limited)
+	handler := http.Handler(mux)
 	srv := &http.Server{Addr: *listen, Handler: handler}
 
 	go func() {
@@ -63,4 +85,18 @@ func main() {
 	defer cancel()
 	_ = srv.Shutdown(ctx)
 	_ = rdb.Close()
+}
+
+func env(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+func listenDefault() string {
+	if p := os.Getenv("PORT"); p != "" {
+		return ":" + p
+	}
+	return ":8080"
 }

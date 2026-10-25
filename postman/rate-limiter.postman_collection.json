@@ -1,0 +1,66 @@
+{
+  "info": {
+    "name": "API Rate Limiter",
+    "description": "Set base_url (local: http://localhost:8080, live: see README). Use Collection Runner on 'Burst request' with 60+ iterations and no delay to see 200 turn into 429. Clients are keyed by X-API-Key, so change api_key to get a fresh bucket.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health check (not rate limited)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/healthz",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "healthz"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Burst request",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{api_key}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": []
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('allowed or limited', () => pm.expect([200,429]).to.include(pm.response.code));",
+              "console.log(pm.response.code, 'remaining', pm.response.headers.get('X-RateLimit-Remaining'), 'retry-after', pm.response.headers.get('Retry-After'));"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "api_key",
+      "value": "demo-user-1"
+    }
+  ]
+}
