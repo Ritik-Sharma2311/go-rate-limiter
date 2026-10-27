@@ -3,6 +3,7 @@ services:
     name: rate-limiter
     runtime: docker
     plan: free
+    region: singapore
     healthCheckPath: /healthz
     envVars:
       - key: UPSTREAM_URL
@@ -15,4 +16,5 @@ services:
   - type: keyvalue
     name: rate-limiter-redis
     plan: free
+    region: singapore
     ipAllowList: [] # internal connections only
